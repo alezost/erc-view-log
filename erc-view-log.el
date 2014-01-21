@@ -17,7 +17,8 @@
 
 ;;; Commentary:
 ;; Set colors on an ERC log file
-;; Will not work with erc-fill-mode
+;; `erc-fill-mode' is partially supported (in multi-line messages, lines
+;; after the first one are not highlighted)
 
 ;; Installation:
 ;;    (require 'erc-view-log)
