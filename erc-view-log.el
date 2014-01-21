@@ -72,19 +72,19 @@
   "Regexp to match nicknames.")
 
 (defvar erc-view-log-message-regexp
-  ".*"
+  ".*?"
   "Regexp to match messages.")
 
 (defvar erc-view-log-current-nick-regexp
-  "\\*\\*\\* Users on .*: .*"
+  "\\*\\*\\* Users on .*: .*?"
   "Regexp to match current nicks lines.")
 
 (defvar erc-view-log-notice-regexp
-  "\\*\\*\\* .*"
+  "\\*\\*\\* .*?"
   "Regexp to match notices.")
 
 (defvar erc-view-log-action-regexp
-  (format "\\* %s .*" erc-valid-nick-regexp)
+  (format "\\* %s .*?" erc-valid-nick-regexp)
   "Regexp to match actions.")
 
 (defvar erc-view-log-prompt-regexp
@@ -150,7 +150,7 @@
      )
     ;; command line
     (,(erc-view-log-finalize-regexp
-       (format "\\(%s\\) \\(/.*\\)" erc-view-log-prompt-regexp))
+       (format "\\(%s\\) \\(/.*?\\)" erc-view-log-prompt-regexp))
      (1 'erc-timestamp-face nil t)
      (2 'erc-prompt-face)
      (3 'erc-command-indicator-face)
