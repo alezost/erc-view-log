@@ -37,6 +37,7 @@
 ;;; Code:
 
 (require 'erc)
+(require 'rx)
 
 
 (defcustom erc-view-log-nickname-face-function
@@ -55,8 +56,16 @@
 
 ;; Warning: do not use group constructions ("\\(some regexp\\)") inside the following regexps
 (defvar erc-view-log-timestamp-regexp
-  "[^<]*"
-  "Regexp to match timestamps.")
+  (rx (and "[" (repeat 2 digit) ":" (repeat 2 digit) "]"))
+  "Regexp to match stamps with `erc-timestamp-format' format.")
+
+(defvar erc-view-log-timestamp-left-regexp
+  "^\\[.*\\]$"
+  "Regexp to match stamps with `erc-timestamp-format-left' format.")
+
+(defvar erc-view-log-timestamp-right-regexp
+  erc-view-log-timestamp-regexp
+  "Regexp to match stamps with `erc-timestamp-format-right' format.")
 
 (defvar erc-view-log-nickname-regexp
   erc-valid-nick-regexp
@@ -99,45 +108,86 @@
 ;; warning: only works if erc-timestamp-format doesn't contains the pattern "<a_nickname>"
 (defun erc-view-log-get-keywords ()
   "Returns the font-lock-defaults."
-      (list
-       ;; own message line
-       `(,(format "^\\(%s\\) \\(<\\)\\(%s\\)\\(>\\)[ \t]\\(%s\\)$" erc-view-log-timestamp-regexp (erc-log-get-my-nick-regexp) erc-view-log-message-regexp)
-	 (1 'erc-timestamp-face)
-	 (2 'erc-default-face)
-	 (3 'erc-my-nick-face)
-	 (4 'erc-default-face)
-	 (5 'erc-input-face) ;; own message
-	 )
-       ;; standard message line
-       `(,(format "^\\(%s\\) \\(<\\)\\(%s\\)\\(>\\)[ \t]\\(%s\\)$" erc-view-log-timestamp-regexp erc-view-log-nickname-regexp erc-view-log-message-regexp)
-	 (1 'erc-timestamp-face)
-	 (2 'erc-default-face)
-	 (3 (erc-log-nick-get-face (match-string 3)))
-	 (4 'erc-default-face)
-	 (5 'erc-default-face) ;; other message
-	 )
-       ;; current nicks line
-       `(,(format "\\(%s\\) \\(%s\\)" erc-view-log-timestamp-regexp erc-view-log-current-nick-regexp)
-	 (1 'erc-timestamp-face)
-	 (2 'erc-current-nick-face)
-	 )
-       ;; notice line
-       `(,(format "\\(%s\\) \\(%s\\)" erc-view-log-timestamp-regexp erc-view-log-notice-regexp)
-	 (1 'erc-timestamp-face)
-	 (2 'erc-notice-face)
-	 )
-       ;; action line
-       `(,(format "\\(%s\\) \\(%s\\)" erc-view-log-timestamp-regexp erc-view-log-action-regexp)
-	 (1 'erc-timestamp-face)
-	 (2 'erc-action-face)
-	 )
-       ;; command line
-       `(,(format "\\(%s\\) \\(%s\\) \\(/.*\\)" erc-view-log-timestamp-regexp erc-view-log-prompt-regexp)
-	 (1 'erc-timestamp-face)
-	 (2 'erc-prompt-face)
-	 (3 'erc-command-indicator-face)
-	 )
-       ))
+  `(
+    ;; own message line
+    (,(erc-view-log-get-message-line-regexp (erc-log-get-my-nick-regexp))
+     (1 'erc-timestamp-face nil t)
+     (2 'erc-default-face)
+     (3 'erc-my-nick-face)
+     (4 'erc-default-face)
+     (5 'erc-input-face) ;; own message
+     (6 'erc-timestamp-face nil t)
+     )
+    ;; standard message line
+    (,(erc-view-log-get-message-line-regexp erc-view-log-nickname-regexp)
+     (1 'erc-timestamp-face nil t)
+     (2 'erc-default-face)
+     (3 (erc-log-nick-get-face (match-string 3)))
+     (4 'erc-default-face)
+     (5 'erc-default-face) ;; other message
+     (6 'erc-timestamp-face nil t)
+     )
+    ;; current nicks line
+    (,(erc-view-log-finalize-regexp
+       (format "\\(%s\\)" erc-view-log-current-nick-regexp))
+     (1 'erc-timestamp-face nil t)
+     (2 'erc-current-nick-face)
+     (3 'erc-timestamp-face nil t)
+     )
+    ;; notice line
+    (,(erc-view-log-finalize-regexp
+       (format "\\(%s\\)" erc-view-log-notice-regexp))
+     (1 'erc-timestamp-face nil t)
+     (2 'erc-notice-face)
+     (3 'erc-timestamp-face nil t)
+     )
+    ;; action line
+    (,(erc-view-log-finalize-regexp
+       (format "\\(%s\\)" erc-view-log-action-regexp))
+     (1 'erc-timestamp-face nil t)
+     (2 'erc-action-face)
+     (3 'erc-timestamp-face nil t)
+     )
+    ;; command line
+    (,(erc-view-log-finalize-regexp
+       (format "\\(%s\\) \\(/.*\\)" erc-view-log-prompt-regexp))
+     (1 'erc-timestamp-face nil t)
+     (2 'erc-prompt-face)
+     (3 'erc-command-indicator-face)
+     (4 'erc-timestamp-face nil t)
+     )
+    ;; date line
+    (,erc-view-log-timestamp-left-regexp 0 'erc-timestamp-face)
+    ;; right timestamp (it's not highlighted in multiline messages)
+    (,erc-view-log-timestamp-right-regexp 0 'erc-timestamp-face)
+    ))
+
+(defun erc-view-log-get-message-line-regexp (nick-re)
+  "Return regexp for a message line.
+NICK-RE is regexp to match a nick of the message author."
+  (erc-view-log-finalize-regexp
+   (rx-to-string
+    `(and (group "<")
+          (group (regex ,nick-re))
+          (group ">")
+          blank
+          (group (regex ,erc-view-log-message-regexp))))))
+
+(defun erc-view-log-finalize-regexp (re)
+  "Return regexp consisting of RE and additional structures.
+Add a group with `erc-view-log-timestamp-regexp' to the beginning
+of RE; add a group with `erc-view-log-timestamp-right-regexp' to
+the end of RE and make it match a whole line.
+Return resulting regexp."
+  (rx-to-string
+   `(and line-start
+         (? (group (regex ,erc-view-log-timestamp-regexp)))
+         (* blank)
+         (regex ,re)
+         (* blank)
+         (? (group (regex ,erc-view-log-timestamp-right-regexp)))
+         line-end)
+   'no-group))
 
 
 ;; undefine some syntax that's messing up with our coloring (for instance, "")
