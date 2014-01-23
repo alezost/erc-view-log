@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'erc)
+(require 'cl-macs)
 (require 'rx)
 
 
@@ -54,6 +55,18 @@
 		 (list :tag "A list of used nicks. Each nick should be unique and should not contain any regexps."))
   :group 'erc)
 
+(defcustom erc-view-log-timestamp-position
+  (cl-case erc-insert-timestamp-function
+    (erc-insert-timestamp-right 'right)
+    (erc-insert-timestamp-left 'left)
+    (t 'both))
+  "Position of timestamps in log files.
+This position may be changed with `erc-insert-timestamp-function'."
+  :type '(choice (const :tag "Left" left)
+                 (const :tag "Right" right)
+                 (const :tag "Both sides" both))
+  :group 'erc)
+
 
 ;; Warning: do not use group constructions ("\\(some regexp\\)") inside the following regexps
 (defvar erc-view-log-timestamp-regexp
@@ -61,7 +74,7 @@
   "Regexp to match stamps with `erc-timestamp-format' format.")
 
 (defvar erc-view-log-timestamp-left-regexp
-  "^\\[.*\\]$"
+  "\\[.*\\]\n"
   "Regexp to match stamps with `erc-timestamp-format-left' format.")
 
 (defvar erc-view-log-timestamp-right-regexp
@@ -111,84 +124,85 @@
   "Returns the font-lock-defaults."
   `(
     ;; own message line
-    (,(erc-view-log-get-message-line-regexp (erc-log-get-my-nick-regexp))
+    (,(erc-view-log-finalize-regexp
+       (erc-view-log-get-message-line-regexp (erc-log-get-my-nick-regexp)))
      (1 'erc-timestamp-face nil t)
-     (2 'erc-default-face)
-     (3 'erc-my-nick-face)
-     (4 'erc-default-face)
-     (5 'erc-input-face) ;; own message
-     (6 'erc-timestamp-face nil t)
+     (2 'erc-timestamp-face nil t)
+     (3 'erc-default-face)
+     (4 'erc-my-nick-face)
+     (5 'erc-default-face)
+     (6 'erc-input-face) ;; own message
      )
     ;; standard message line
-    (,(erc-view-log-get-message-line-regexp erc-view-log-nickname-regexp)
+    (,(erc-view-log-finalize-regexp
+       (erc-view-log-get-message-line-regexp erc-view-log-nickname-regexp))
      (1 'erc-timestamp-face nil t)
-     (2 'erc-default-face)
-     (3 (erc-log-nick-get-face (match-string 3)))
-     (4 'erc-default-face)
-     (5 'erc-default-face) ;; other message
-     (6 'erc-timestamp-face nil t)
+     (2 'erc-timestamp-face nil t)
+     (3 'erc-default-face)
+     (4 (erc-log-nick-get-face (match-string 3)))
+     (5 'erc-default-face)
+     (6 'erc-default-face) ;; other message
      )
     ;; current nicks line
     (,(erc-view-log-finalize-regexp
-       (format "\\(%s\\)" erc-view-log-current-nick-regexp))
+       (format "\\(?3:%s\\)" erc-view-log-current-nick-regexp))
      (1 'erc-timestamp-face nil t)
-     (2 'erc-current-nick-face)
-     (3 'erc-timestamp-face nil t)
+     (2 'erc-timestamp-face nil t)
+     (3 'erc-current-nick-face)
      )
     ;; notice line
     (,(erc-view-log-finalize-regexp
-       (format "\\(%s\\)" erc-view-log-notice-regexp))
+       (format "\\(?3:%s\\)" erc-view-log-notice-regexp))
      (1 'erc-timestamp-face nil t)
-     (2 'erc-notice-face)
-     (3 'erc-timestamp-face nil t)
+     (2 'erc-timestamp-face nil t)
+     (3 'erc-notice-face)
      )
     ;; action line
     (,(erc-view-log-finalize-regexp
-       (format "\\(%s\\)" erc-view-log-action-regexp))
+       (format "\\(?3:%s\\)" erc-view-log-action-regexp))
      (1 'erc-timestamp-face nil t)
-     (2 'erc-action-face)
-     (3 'erc-timestamp-face nil t)
+     (2 'erc-timestamp-face nil t)
+     (3 'erc-action-face)
      )
     ;; command line
     (,(erc-view-log-finalize-regexp
-       (format "\\(%s\\) \\(/.*?\\)" erc-view-log-prompt-regexp))
+       (format "\\(?3:%s\\) \\(?4:/.*?\\)" erc-view-log-prompt-regexp))
      (1 'erc-timestamp-face nil t)
-     (2 'erc-prompt-face)
-     (3 'erc-command-indicator-face)
-     (4 'erc-timestamp-face nil t)
-     )
-    ;; date line
-    (,erc-view-log-timestamp-left-regexp 0 'erc-timestamp-face)
-    ;; right timestamp (it's not highlighted in multiline messages)
-    (,erc-view-log-timestamp-right-regexp 0 'erc-timestamp-face)
-    ))
+     (2 'erc-timestamp-face nil t)
+     (3 'erc-prompt-face)
+     (4 'erc-command-indicator-face)
+     )))
 
 (defun erc-view-log-get-message-line-regexp (nick-re)
-  "Return regexp for a message line.
-NICK-RE is regexp to match a nick of the message author."
-  (erc-view-log-finalize-regexp
-   (rx-to-string
-    `(and (group "<")
-          (group (regex ,nick-re))
-          (group ">")
-          blank
-          (group (regex ,erc-view-log-message-regexp))))))
+  "Return regexp to match a full user message.
+NICK-RE is regexp to match a nick of the message author.
+User message is a message sent to other users (excluding \"/me\").
+It consists of a user nick surrounded by angle brackets and a
+message body."
+  (rx-to-string
+   `(and (group-n 3 "<")
+         (group-n 4 (regex ,nick-re))
+         (group-n 5 ">")
+         blank
+         (group-n 6 (regex ,erc-view-log-message-regexp)))))
 
 (defun erc-view-log-finalize-regexp (re)
   "Return regexp consisting of RE and additional structures.
-Add a group with `erc-view-log-timestamp-regexp' to the beginning
-of RE; add a group with `erc-view-log-timestamp-right-regexp' to
-the end of RE and make it match a whole line.
+Add groups with timestamps to the beginning and to the end of RE
+depending on `erc-view-log-timestamp-position' and make it match
+a whole line.
 Return resulting regexp."
-  (rx-to-string
-   `(and line-start
-         (? (group (regex ,erc-view-log-timestamp-regexp)))
-         (* blank)
-         (regex ,re)
-         (* blank)
-         (? (group (regex ,erc-view-log-timestamp-right-regexp)))
-         line-end)
-   'no-group))
+  (cl-multiple-value-bind (left right)
+      (cl-case erc-view-log-timestamp-position
+        (left  (list erc-view-log-timestamp-regexp nil))
+        (right (list nil erc-view-log-timestamp-regexp))
+        (both  (list erc-view-log-timestamp-left-regexp
+                     erc-view-log-timestamp-right-regexp)))
+    (concat "^"
+            (and left  (format "\\(?1:%s\\)?[[:blank:]]*" left))
+            re
+            (and right (format "[[:blank:]]*\\(?2:%s\\)?" right))
+            "$")))
 
 
 ;; undefine some syntax that's messing up with our coloring (for instance, "")
