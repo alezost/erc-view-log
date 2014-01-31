@@ -38,7 +38,6 @@
 ;;; Code:
 
 (require 'erc)
-(require 'cl-macs)
 (require 'rx)
 
 
@@ -56,10 +55,12 @@
   :group 'erc)
 
 (defcustom erc-view-log-timestamp-position
-  (cl-case erc-insert-timestamp-function
-    (erc-insert-timestamp-right 'right)
-    (erc-insert-timestamp-left 'left)
-    (t 'both))
+  (cond
+   ((eq erc-insert-timestamp-function 'erc-insert-timestamp-right)
+    'right)
+   ((eq erc-insert-timestamp-function 'erc-insert-timestamp-left)
+    'left)
+   (t 'both))
   "Position of timestamps in log files.
 This position may be changed with `erc-insert-timestamp-function'."
   :type '(choice (const :tag "Left" left)
@@ -192,12 +193,15 @@ Add groups with timestamps to the beginning and to the end of RE
 depending on `erc-view-log-timestamp-position' and make it match
 a whole line.
 Return resulting regexp."
-  (cl-multiple-value-bind (left right)
-      (cl-case erc-view-log-timestamp-position
-        (left  (list erc-view-log-timestamp-regexp nil))
-        (right (list nil erc-view-log-timestamp-regexp))
-        (both  (list erc-view-log-timestamp-left-regexp
-                     erc-view-log-timestamp-right-regexp)))
+  (let (left right)
+    (cond
+     ((eq erc-view-log-timestamp-position 'left)
+      (setq left  erc-view-log-timestamp-regexp))
+     ((eq erc-view-log-timestamp-position 'right)
+      (setq right erc-view-log-timestamp-regexp))
+     (t
+      (setq left  erc-view-log-timestamp-left-regexp
+            right erc-view-log-timestamp-right-regexp)))
     (concat "^"
             (and left  (format "\\(?1:%s\\)?[[:blank:]]*" left))
             re
